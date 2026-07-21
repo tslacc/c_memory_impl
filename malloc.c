@@ -1,17 +1,21 @@
 #include "malloc.h"
 
-struct block{
+
+
+typedef struct block{
 	char *data;
 	char in_use;
 } s_block;
 
-static s_block *mem_blocks;
+s_block *mem_blocks;
 
 //On calling malloc, determine the size of the block necessary.
-//Split block sizes into at least three groups (small, med, large)
-//Preallocate a large contiguous block of memory and divide into blocks
-//Determine a free block and give to caller
+//Refer to https://linux.die.net/man/3/malloc
+
 void *_malloc(size_t size){
 	printf("malloc called with size %u\n",size);
-	return (void*)10;
+	printf("sbrk(0) returns with value %u\n", sbrk(0));
+	//If size is smaller than mmap size, sbrk. If larger, then mmap strategy
+	//Mutex possibly necessary
+	return sbrk(size);
 }

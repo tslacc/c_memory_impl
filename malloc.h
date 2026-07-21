@@ -3,6 +3,9 @@
 
 #include <stddef.h>
 #include <stdio.h>
+#include <sys/mman.h>
+#include <unistd.h>
+
 #define DYNAMIC_ALLOCATOR_BLOCK_SIZE 512
 #define DYNAMIC_ALLOCATOR_BLOCK_COUNT 4
 
