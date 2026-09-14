@@ -1,15 +1,11 @@
 #ifndef LIB_MALLOC
 #define LIB_MALLOC
-
-#include <stddef.h>
-#include <stdio.h>
-#include <sys/mman.h>
-#include <unistd.h>
-
-#define DYNAMIC_ALLOCATOR_BLOCK_SIZE 512
-#define DYNAMIC_ALLOCATOR_BLOCK_COUNT 4
+#include <stdint.h>
 
 //Custom malloc implementation.
-void *_malloc(long unsigned int size);
+extern uint8_t *page;
+void malloc_init(void);
+void debug(void);
+void malloc_clean(void);
 
 #endif
