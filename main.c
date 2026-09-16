@@ -4,11 +4,7 @@
 
 int main(int argc, char * argv[])
 {
-	extern uint8_t *page;
-	printf("Page ptr is %x\n", page);
-	malloc_init();
-	debug();
-	print_blocks();
-	malloc_clean();
+	fflush(stdout);
+	printf("pls don't segfault\n");
 	return 0;
 }

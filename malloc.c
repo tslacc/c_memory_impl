@@ -3,8 +3,10 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <string.h>
+#include <pthread.h>
 #include "malloc.h"
 
+pthread_mutex_t mutex;
 // Store how much space in the immediate next block is used
 union blocksize{
 	size_t as_size_t;
@@ -12,13 +14,28 @@ union blocksize{
 };
 // When a block is NOT in use, let the default value be zero; when a block is in use, let its first byte be nonzero
 uint8_t *page;
-void malloc_init(void){
-	if(page==NULL)
-		page = mmap(NULL, getpagesize(), PROT_READ|PROT_WRITE, MAP_ANON|MAP_SHARED, -1, 0);
-	*(page+0) = 1;
+static void write_tag(size_t index, int is_used, size_t size){
+	pthread_mutex_lock(&mutex);
+	
+	*(page+index) = (uint8_t)is_used;
 	union blocksize block;
-	block.as_size_t = getpagesize()-1-sizeof(size_t);
-	memcpy(page+1, block.as_char, sizeof(size_t));
+	block.as_size_t = size;
+	memcpy(page+index+1, block.as_char, sizeof(size_t));
+	printf("Stall\n");
+	pthread_mutex_unlock(&mutex);
+	return;
+}
+void custom_init(void){
+	pthread_mutex_init(&mutex, NULL);
+	if(page==NULL){
+		pthread_mutex_lock(&mutex);
+		
+		page = mmap(NULL, getpagesize(), PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
+		
+		pthread_mutex_unlock(&mutex);
+	}
+	printf("Stall\n");
+	write_tag(0, 0, getpagesize()-1-sizeof(size_t));
 	return;
 }
 //Print all blocks within page
@@ -53,5 +70,28 @@ void debug(void){
 void malloc_clean(void){
 	if(page!=NULL)
 		munmap(page, getpagesize());
+	return;
+}
+
+static size_t find_first_open_block_minsize(size_t minimum_size){
+
+	if(page == NULL) return -1;
+	size_t index = 0;
+	union blocksize block;
+	while(index < getpagesize()){
+		//Get the size of the block
+		memcpy(block.as_char, page+index+1, sizeof(size_t));
+
+		//is this block free?
+		if(*(page+index)==0){
+			if(block.as_size_t <= minimum_size)
+				return index;
+		}
+		index += 1 + block.as_size_t;
+	}
+	return -1;
+}
+void *custom_malloc(size_t size){
+	size_t index = find_first_open_block_minsize(size);
 	return;
 }
