@@ -17,15 +17,19 @@ union blocksize{
 uint8_t *page;
 static void write_tag(size_t index, int is_used, size_t size){
 	pthread_mutex_lock(&mutex);
-	
 	*(page+index) = (uint8_t)is_used;
 	union blocksize block;
 	block.as_size_t = size;
 	memcpy(page+index+1, block.as_char, sizeof(size_t));
 	pthread_mutex_unlock(&mutex);
+	printf("Wrote tag at (pos, used, size) = (%lu, %u, %lu): ", index, is_used, block.as_size_t);
+	for(int i = 0; i < (1+sizeof(size_t)); i++){
+		printf("%u ",*(page+index+i));
+	}
+	printf("\n");
 	return;
 }
-void custom_init(void){
+static void custom_init(void){
 	pthread_mutex_init(&mutex, NULL);
 	if(page==NULL){
 		pthread_mutex_lock(&mutex);
@@ -40,15 +44,15 @@ void custom_init(void){
 //Print all blocks within page
 void print_blocks(void){
 	size_t index = 0;
-	printf("sizeof size_t is %u\n", sizeof(size_t));
+	printf("sizeof size_t is %lu\n", sizeof(size_t));
 	while(index < getpagesize()){
-		printf("Scanning index %u: ", index);
+		printf("Scanning index %lu: ", index);
 		if(*(page+index)) printf("Block in use");
 		else printf("Block is free");
 		index++;
 		union blocksize block;
 		memcpy(block.as_char, page+index, sizeof(size_t));
-		printf(", size of block is %u bits\n", block.as_size_t);
+		printf(", size of block is %lu bits\n", block.as_size_t);
 		index+=sizeof(size_t)+block.as_size_t;
 	}
 	return;
@@ -63,7 +67,7 @@ void debug(void){
 		printf("%u ",*(page+i));
 		rowc++;
 	}
-	printf("\n%x, total size %u\n", page, getpagesize());
+	printf("\n%p, total size %u\n", page, getpagesize());
 	return;
 }
 void malloc_clean(void){
@@ -72,21 +76,23 @@ void malloc_clean(void){
 	return;
 }
 
-static size_t find_first_open_block_minsize(size_t minimum_size){
-
+static size_t find_first_open_block_minsize(size_t requested_size){
 	if(page == NULL) return -1;
 	size_t index = 0;
 	union blocksize block;
-	while(index < getpagesize()){
+	// sanity check 
+	while(index + 1 + sizeof(size_t) + requested_size < getpagesize()){
+		printf("Checking block index %lu\n", index);
+		printf("Is this block used? %hhu\n", *(page+index));
 		//Get the size of the block
 		memcpy(block.as_char, page+index+1, sizeof(size_t));
-
+	
 		//is this block free?
 		if(*(page+index)==0){
-			if(block.as_size_t <= minimum_size)
+			if(block.as_size_t >= requested_size)
 				return index;
 		}
-		index += 1 + block.as_size_t;
+		index += 1 + sizeof(size_t) + block.as_size_t;
 	}
 	return -1;
 }
@@ -103,20 +109,27 @@ static int valid_space_after_alloc(size_t index, size_t ideal_size){
 	}
 	return false;
 }
-void *custom_malloc(size_t size){
+
+// TODO IMPLEMENT
+void custom_free(void *ptr){
+	return;
+}
+void *custom_malloc(size_t requestedSize){
+	if(page==NULL) custom_init();
 	void *result = NULL;
-	size_t index = find_first_open_block_minsize(size);
+	size_t index = find_first_open_block_minsize(requestedSize);
 	if(index != -1) {
 		// Is there enough size remaining to fit a small block?
 		union blocksize originalSize;
 		memcpy(originalSize.as_char, page+index+1, sizeof(size_t));
-		if(valid_space_after_alloc(index, size)){
-			write_tag(index, 1, size);
-			write_tag(index+1+sizeof(size_t), 0, originalSize.as_size_t-(1+sizeof(size_t))*2);
+		if(valid_space_after_alloc(index, requestedSize)){
+			write_tag(index, 1, requestedSize);
+			write_tag(index+1+sizeof(size_t)+requestedSize, 0, originalSize.as_size_t-(1+sizeof(size_t))*2-requestedSize);
 		} else {
-			write_tag(index, 1, originalSize.as_size_t);
+			write_tag(index, 1, originalSize.as_size_t-(1+sizeof(size_t)));
 		}
 		result = page+index+1+sizeof(size_t);
 	}
+	printf("custom_malloc returning ptr %p\n", result);
 	return result;
 }
