@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <pthread.h>
+#include <stdbool.h>
 #include "malloc.h"
 
 pthread_mutex_t mutex;
@@ -21,7 +22,6 @@ static void write_tag(size_t index, int is_used, size_t size){
 	union blocksize block;
 	block.as_size_t = size;
 	memcpy(page+index+1, block.as_char, sizeof(size_t));
-	printf("Stall\n");
 	pthread_mutex_unlock(&mutex);
 	return;
 }
@@ -34,7 +34,6 @@ void custom_init(void){
 		
 		pthread_mutex_unlock(&mutex);
 	}
-	printf("Stall\n");
 	write_tag(0, 0, getpagesize()-1-sizeof(size_t));
 	return;
 }
@@ -91,7 +90,33 @@ static size_t find_first_open_block_minsize(size_t minimum_size){
 	}
 	return -1;
 }
+// Returns true if there is space for a valid meaningful block AFTER allocating a block of ideal_size.
+// If there isn't, return false.
+static int valid_space_after_alloc(size_t index, size_t ideal_size){
+	//assume this block is a free block
+	union blocksize block;
+	memcpy(block.as_char, page+index+1, sizeof(size_t));
+	// Is there space to fit a meaningful block?
+	const size_t MEANINGFUL_SIZE_MINIMUM = 0;
+	if(block.as_size_t-(1+sizeof(size_t))*2 - ideal_size > MEANINGFUL_SIZE_MINIMUM){
+		return true;
+	}
+	return false;
+}
 void *custom_malloc(size_t size){
+	void *result = NULL;
 	size_t index = find_first_open_block_minsize(size);
-	return;
+	if(index != -1) {
+		// Is there enough size remaining to fit a small block?
+		union blocksize originalSize;
+		memcpy(originalSize.as_char, page+index+1, sizeof(size_t));
+		if(valid_space_after_alloc(index, size)){
+			write_tag(index, 1, size);
+			write_tag(index+1+sizeof(size_t), 0, originalSize.as_size_t-(1+sizeof(size_t))*2);
+		} else {
+			write_tag(index, 1, originalSize.as_size_t);
+		}
+		result = page+index+1+sizeof(size_t);
+	}
+	return result;
 }
