@@ -9,7 +9,11 @@
 #include "malloc.h"
 
 #define SIZEOF_TAG 1+sizeof(size_t)
+#define PAGE_SIZE sysconf(_SC_PAGESIZE)
 
+/* 	TODO
+ *	Store multiple pages instead of page
+ */
 pthread_mutex_t mutex;
 // Store how much space in the immediate next block is used
 union blocksize{
@@ -26,11 +30,6 @@ static void write_tag(uint8_t *index, int is_used, size_t size){
 	block.as_size_t = size;
 	memcpy(index+1, block.as_char, sizeof(size_t));
 	pthread_mutex_unlock(&mutex);
-	printf("Wrote tag at (pos, used, size) = (%p, %u, %lu): ", index, is_used, block.as_size_t);
-	for(int i = 0; i < (1+sizeof(size_t)); i++){
-		printf("%u ",*(index+i));
-	}
-	printf("\n");
 	return;
 }
 static void custom_init(void){
@@ -38,19 +37,19 @@ static void custom_init(void){
 	if(page==NULL){
 		pthread_mutex_lock(&mutex);
 		
-		page = mmap(NULL, getpagesize(), PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
+		page = mmap(NULL, PAGE_SIZE, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
 		
 		pthread_mutex_unlock(&mutex);
 	}
 	printf("Custom init attempting to write tag to %p\n", page);
-	write_tag(page, 0, getpagesize()-1-sizeof(size_t));
+	write_tag(page, 0, PAGE_SIZE-1-sizeof(size_t));
 	return;
 }
 //Print all blocks within page
 void print_blocks(void){
 	size_t index = 0;
 	printf("sizeof size_t is %lu\n", sizeof(size_t));
-	while(index < getpagesize()){
+	while(index < PAGE_SIZE){
 		printf("Scanning index %lu: ", index);
 		if(*(page+index)) printf("Block in use");
 		else printf("Block is free");
@@ -64,7 +63,7 @@ void print_blocks(void){
 }
 void debug(void){
 	int rowc = 0;
-	for(int i = 0; i < getpagesize(); i++){
+	for(int i = 0; i < PAGE_SIZE; i++){
 		if(rowc==32){
 			printf("\n");
 			rowc=0;	
@@ -72,12 +71,12 @@ void debug(void){
 		printf("%u ",*(page+i));
 		rowc++;
 	}
-	printf("\n%p, total size %u\n", page, getpagesize());
+	printf("\n%p, total size %lu\n", page, PAGE_SIZE);
 	return;
 }
 void malloc_clean(void){
 	if(page!=NULL)
-		munmap(page, getpagesize());
+		munmap(page, PAGE_SIZE);
 	return;
 }
 
@@ -89,7 +88,7 @@ static uint8_t *find_ptr_of_supremum_block(size_t requested_size){
 	uint8_t *index = page;
 	size_t local_block_size = 0;
 	size_t min_record_size = INT_MAX;
-	while(index + SIZEOF_TAG + requested_size < page+getpagesize()){
+	while(index + SIZEOF_TAG + requested_size < page+PAGE_SIZE){
 		memcpy(&local_block_size, index+1, sizeof(size_t));
 		if(*index==0) //This block is free
 			if(requested_size <= local_block_size) // This block is big enough
@@ -113,10 +112,24 @@ static int valid_space_after_alloc(uint8_t *index, size_t ideal_size){
 	}
 	return false;
 }
-// Find the last valid block that exists before a threshold
-// TODO Implement
-static uint8_t *find_ptr_last_block_before_pos(uint8_t *stop_ptr){
+static uint8_t *ptr_to_next_block(uint8_t *ptr){
+	size_t block_size = 0;
+	memcpy(&block_size, ptr+1, sizeof(size_t));
+	if(ptr+SIZEOF_TAG+block_size < page+PAGE_SIZE){
+		return ptr+SIZEOF_TAG+block_size;
+	}
 	return NULL;
+}
+// Find the last valid block that exists before a threshold
+static uint8_t *find_ptr_last_block_before_pos(uint8_t *stop_ptr){
+	uint8_t *result = page;
+	uint8_t *checkptr = page;
+	while(checkptr != NULL && checkptr < stop_ptr){
+		result = checkptr;
+		checkptr = ptr_to_next_block(checkptr);
+	}
+	
+	return result;
 }
 // Assumes that *ptr is valid
 static void merge_to_right(uint8_t *ptr){
@@ -131,10 +144,11 @@ static void merge_to_right(uint8_t *ptr){
 		memcpy(ptr+1, local_block_size.as_char, sizeof(size_t)); 
 	}
 }
-void custom_free(uint8_t *ptr){
+// Frees a block by modifying the size headers of the nearby tags.
+void custom_free(void *ptr){
 	//TODO Sanity check
 	// Set self pointer to 0
-	*ptr = 0;
+	*(uint8_t*)ptr = 0;
 	// Merge to RIGHT
 	merge_to_right(ptr);
 	// Merge to LEFT
@@ -146,7 +160,7 @@ void custom_free(uint8_t *ptr){
 	}
 	return;
 }
-void *custom_malloc(size_t requestedSize){
+void *custom_malloc(const size_t requestedSize){
 	printf("Begin custom malloc w rs %lu\n", requestedSize);
 	if(page==NULL) custom_init();
 	printf("custom init OK\n");
@@ -164,6 +178,7 @@ void *custom_malloc(size_t requestedSize){
 		}
 		result = index+SIZEOF_TAG;
 	}
-	printf("custom_malloc returning ptr %p\n", result);
 	return result;
 }
+
+#undef SIZEOF_TAG

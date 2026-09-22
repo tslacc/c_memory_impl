@@ -7,6 +7,6 @@ extern uint8_t *page;
 void debug(void);
 void malloc_clean(void);
 void print_blocks(void);
-void custom_free(uint8_t *ptr);
-void *custom_malloc(size_t size);
+void custom_free(void *ptr);
+void *custom_malloc(const size_t size);
 #endif
