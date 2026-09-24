@@ -41,12 +41,17 @@ struct Page{
 
 struct Page *basePage;
 
-static void writeTag(uint8_t *memPtr, bool inUse, uint32_t blockSize){
+// Write a u32 tag
+static void writeTag(uint8_t *memPtr, bool inUse, uint32_t sz){
 	union U32 tag;
-	tag.as_u32 = ((blockSize << 1) >> 2) + (inUse << 31);
-	memcpy(memPtr, tag.as_char, sizeof(uint32_t));
+	tag.as_u32 = ((sz << 1) >> 2) | (inUse << 31);
+	memcpy(memPtr, tag.as_char, SIZEOF_TAG);
 }
-
+static uint32_t getTag(void *memPtr){
+	uint32_t result = 0;
+	memcpy(&result, memPtr, SIZEOF_TAG);
+	return result;
+}
 static struct Page *newPage(){
 	struct Page *result = sbrk(sizeof(struct Page));
 	result->bptr = NULL;
@@ -57,6 +62,30 @@ static struct Page *newPage(){
 	result->nextPage = NULL;
 	return result;
 }
+// Accepts two params: bptr, the base address for the page, and *cptr, the current tag's address
+static void *get_ptr_to_next_tag(void *bptr, void *cptr){
+	uint32_t dist = getTag(cptr);
+	dist = (dist << 1) >> 1;
+	if(cptr+dist - bptr > (uint32_t)PAGE_SIZE)
+		return NULL;
+	return cptr+dist;
+}
+static void *search_supremum_block(const uint32_t targetSize){
+	struct Page *block = basePage;
+	void *result = NULL;
+	uint32_t record_size = UINT32_MAX;
+	while(block != NULL){
+		void *pos = block->bptr;
+		while(pos!=NULL){
+			uint32_t size = (getTag(pos) << 1) >> 1;
+			if(size >= targetSize && size < record_size)
+				result = pos;
+			pos = get_ptr_to_next_tag(block->bptr, pos);
+		}
+		block = block->nextPage;
+	}
+	return result;
+}
 static void initialize(){
 	pthread_mutex_init(&mutex, NULL);
 	basePage = newPage();
@@ -64,8 +93,13 @@ static void initialize(){
 void debug(void){
 }
 void *custom_malloc(const size_t size){
+	(void)size;
 	if(basePage == NULL) initialize();
-	return NULL;
+	void *result = search_supremum_block(size);
+	if(result==NULL) return NULL;
+	// TODO Consider modifying size here to bytealign
+	writeTag(result, 1, size);
+	return result;
 }
 #undef SIZEOF_TAG
 #undef PAGE_SIZE
