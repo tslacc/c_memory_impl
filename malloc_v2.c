@@ -63,33 +63,59 @@ static struct Page *newPage(){
 	return result;
 }
 // Accepts two params: bptr, the base address for the page, and *cptr, the current tag's address
-static void *get_ptr_to_next_tag(void *bptr, void *cptr){
+static void *get_ptr_to_next_tag(struct Page *page, void *cptr){
 	uint32_t dist = getTag(cptr);
 	dist = (dist << 1) >> 1;
-	if(cptr+dist - bptr > (uint32_t)PAGE_SIZE)
+	if(cptr+dist - (void*)page->bptr > (uint32_t)PAGE_SIZE)
 		return NULL;
 	return cptr+dist;
 }
 static void *search_supremum_block(const uint32_t targetSize){
-	struct Page *block = basePage;
+	struct Page *page = basePage;
 	void *result = NULL;
 	uint32_t record_size = UINT32_MAX;
-	while(block != NULL){
-		void *pos = block->bptr;
+	while(page != NULL){
+		void *pos = page->bptr;
 		while(pos!=NULL){
 			uint32_t size = (getTag(pos) << 1) >> 1;
 			if(size >= targetSize && size < record_size)
 				result = pos;
-			pos = get_ptr_to_next_tag(block->bptr, pos);
+			pos = get_ptr_to_next_tag(page, pos);
 		}
-		block = block->nextPage;
+		page = page->nextPage;
 	}
 	return result;
 }
+static struct Page *identify_page_of_ptr(const void *ptr){
+	struct Page *result = basePage;
+	while(result!=NULL){
+		if((void*)(result->bptr)+PAGE_SIZE > ptr) return result;
+		result = result->nextPage;
+	}
+	return NULL;
+}
+static void merge_right(struct Page *page, void *ptr){
+	uint32_t tag = getTag(ptr-SIZEOF_TAG);
+	uint8_t *nextTag = get_ptr_to_next_tag(page, ptr);
+	// TODO Finish
+}
+static void merge_left(struct Page *page, void *ptr){
+	// TODO Finish
+	// Only merge if the left pointer is not used.
+}
+void custom_free(void *ptr){
+	struct Page *page = identify_page_of_ptr(ptr);
+	merge_right(page, ptr);
+	// Only merge if necessary
+	merge_left(page, ptr);
+	return;
+}
+
 static void initialize(){
 	pthread_mutex_init(&mutex, NULL);
 	basePage = newPage();
 }
+
 void debug(void){
 }
 void *custom_malloc(const size_t size){
