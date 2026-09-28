@@ -35,7 +35,7 @@ union U32{
 // O(n) search and O(1) allocation time.
 struct Page{
 	// Base pointer
-	uint8_t *bptr;
+	void *bptr;
 	struct Page *nextPage;
 };
 
@@ -47,7 +47,14 @@ static void writeTag(uint8_t *memPtr, bool inUse, uint32_t sz){
 	tag.as_u32 = ((sz << 1) >> 2) | (inUse << 31);
 	memcpy(memPtr, tag.as_char, SIZEOF_TAG);
 }
-static uint32_t getTag(void *memPtr){
+//Returns the highest bit
+static uint8_t getBlockUsed(uint32_t tag){
+	return (uint8_t)(tag>>31);
+}
+static uint32_t getBlockSize(uint32_t tag){
+	return (tag<<1)>>1;
+}
+static uint32_t getBlockTag(void *memPtr){
 	uint32_t result = 0;
 	memcpy(&result, memPtr, SIZEOF_TAG);
 	return result;
@@ -64,7 +71,7 @@ static struct Page *newPage(){
 }
 // Accepts two params: bptr, the base address for the page, and *cptr, the current tag's address
 static void *get_ptr_to_next_tag(struct Page *page, void *cptr){
-	uint32_t dist = getTag(cptr);
+	uint32_t dist = getBlockTag(cptr);
 	dist = (dist << 1) >> 1;
 	if(cptr+dist - (void*)page->bptr > (uint32_t)PAGE_SIZE)
 		return NULL;
@@ -77,7 +84,7 @@ static void *search_supremum_block(const uint32_t targetSize){
 	while(page != NULL){
 		void *pos = page->bptr;
 		while(pos!=NULL){
-			uint32_t size = (getTag(pos) << 1) >> 1;
+			uint32_t size = getBlockSize(getBlockTag(pos));
 			if(size >= targetSize && size < record_size)
 				result = pos;
 			pos = get_ptr_to_next_tag(page, pos);
@@ -94,20 +101,35 @@ static struct Page *identify_page_of_ptr(const void *ptr){
 	}
 	return NULL;
 }
-static void merge_right(struct Page *page, void *ptr){
-	uint32_t tag = getTag(ptr-SIZEOF_TAG);
-	uint8_t *nextTag = get_ptr_to_next_tag(page, ptr);
-	// TODO Finish
+static void *getPtrLeftTag(struct Page *page, const void *ptr){
+	void *result = page->bptr;
+	while(true){
+		void *next = get_ptr_to_next_tag(page, result);
+		if(next > ptr) return result;
+		result = next;
+	}
+	return result;
 }
-static void merge_left(struct Page *page, void *ptr){
-	// TODO Finish
-	// Only merge if the left pointer is not used.
+static void merge_free_right(struct Page *page, void *ptr){
+	uint32_t tag = getBlockTag(ptr-SIZEOF_TAG);
+	uint32_t *p_nextTag = get_ptr_to_next_tag(page, ptr);
+	uint32_t nextTag = getBlockTag(p_nextTag);
+	if(getBlockUsed(nextTag)) return;
+	writeTag(ptr, 0, getBlockSize(tag) + SIZEOF_TAG + getBlockSize(nextTag));
 }
+static void merge_free_left(struct Page *page, void *ptr){
+	void *left = getPtrLeftTag(page, ptr);
+	if(getBlockUsed(getBlockTag(left))) return;
+	merge_free_right(page, left);	
+}
+// Accepts a pointer to allocated memory and frees the HEADER.
 void custom_free(void *ptr){
+	// Decrement to header
+	ptr = ptr - SIZEOF_TAG;
 	struct Page *page = identify_page_of_ptr(ptr);
-	merge_right(page, ptr);
+	merge_free_right(page, ptr);
 	// Only merge if necessary
-	merge_left(page, ptr);
+	merge_free_left(page, ptr);
 	return;
 }
 
