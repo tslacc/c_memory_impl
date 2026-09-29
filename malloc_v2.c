@@ -140,8 +140,24 @@ static void initialize(){
 
 void debug(void){
 }
-void *custom_malloc(const size_t size){
-	(void)size;
+// Aligns to 8
+static size_t align8(size_t size){
+	uint8_t adjust = (0b1000-(size&0b111))&0b111;
+	size = size+adjust;
+	return size;
+}
+// TODO Upgrade: Doesn't track huge pages in a smart way
+static void *hugeCustomMalloc(size_t size){
+	void *result = sbrk(sizeof(void *));
+	result = NULL;
+	pthread_mutex_lock(&mutex);
+	result = mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
+	pthread_mutex_unlock(&mutex);
+	return result;
+}
+void *custom_malloc(size_t size){
+	if(size+SIZEOF_TAG > (size_t)PAGE_SIZE) return hugeCustomMalloc(size);
+	size = align8(size);
 	if(basePage == NULL) initialize();
 	void *result = search_supremum_block(size);
 	if(result==NULL) return NULL;
