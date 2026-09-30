@@ -10,9 +10,6 @@
 
 #define SIZEOF_TAG sizeof(uint32_t)
 #define PAGE_SIZE sysconf(_SC_PAGESIZE)
-/* 	TODO
- *	Store multiple pages instead of page
- */
 pthread_mutex_t mutex;
 
 union U32{
@@ -75,18 +72,22 @@ static void *get_ptr_to_next_tag(struct Page *page, void *cptr){
 	dist = (dist << 1) >> 1;
 	if(cptr+dist - (void*)page->bptr > (uint32_t)PAGE_SIZE)
 		return NULL;
-	return cptr+dist;
+	return cptr+dist+SIZEOF_TAG;
 }
 static void *search_supremum_block(const uint32_t targetSize){
+	printf("Supremum search for size %lu\n", targetSize);
 	struct Page *page = basePage;
 	void *result = NULL;
 	uint32_t record_size = UINT32_MAX;
 	while(page != NULL){
 		void *pos = page->bptr;
+		printf("Supremum search with base pointer %p\n", page->bptr);
 		while(pos!=NULL){
 			uint32_t size = getBlockSize(getBlockTag(pos));
-			if(size >= targetSize && size < record_size)
+			if(size >= targetSize && size < record_size){
 				result = pos;
+				record_size = size;
+			}
 			pos = get_ptr_to_next_tag(page, pos);
 		}
 		page = page->nextPage;
@@ -153,15 +154,17 @@ static void *hugeCustomMalloc(size_t size){
 	pthread_mutex_lock(&mutex);
 	result = mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
 	pthread_mutex_unlock(&mutex);
+	printf("Huge malloc allocated at %p\n", result);
 	return result;
 }
 void *custom_malloc(size_t size){
+	printf("Begin cmalloc w sz %u out of standard size %u\n", size, PAGE_SIZE);
 	if(size+SIZEOF_TAG > (size_t)PAGE_SIZE) return hugeCustomMalloc(size);
 	size = align8(size);
 	if(basePage == NULL) initialize();
 	void *result = search_supremum_block(size);
+	printf("Supremum result position is %p\n", result);
 	if(result==NULL) return NULL;
-	// TODO Consider modifying size here to bytealign
 	writeTag(result, 1, size);
 	return result;
 }
