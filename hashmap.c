@@ -18,14 +18,23 @@ static uint64_t basicComputeHash(struct ptrHashmap *hashmap, void *ptr){
 
 struct ptrHashmap *getConstructedHashmap(){
 	struct ptrHashmap *result = malloc(sizeof(struct ptrHashmap));
+	result->currentBitsInHash = 4;
 	// Data holds 2^n -1 pointers
 	result->data = mmap(NULL, ((1<<INITIAL_BITS) -1)*(sizeof(void *)), PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
 	return result;
 }
 
 void ptrHashmap_addPointerToDict(struct ptrHashmap *hashmap, void *ptr){
-	// Store pointer at the offset computed by ComputeHash
+	// Get the offset hash
+	uint64_t offset_hash = basicComputeHash(hashmap, ptr);
+	//Check for collision
+	while(*(hashmap->data+offset_hash)!=NULL && *(hashmap->data+offset_hash)!=ptr){ //we have a collision
+		if(hashmap->currentBitsInHash < 64){ //Expand number of bits to get
+			hashmap->currentBitsInHash ++;
+			// TODO Somehow expand the data pointer...?
+		}
+		offset_hash = basicComputeHash(hashmap, ptr);
+		
+	}
 	*(hashmap->data+basicComputeHash(hashmap, ptr)) = ptr;
-	
-	
 }
