@@ -1,10 +1,13 @@
 #include <stdint.h>
+#include <string.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <malloc.h>
+
 #define INITIAL_BITS 4
-// Keep all written tags in here?
+// Only write tags to data instead of the pointer itself
 struct ptrHashmap{
-	void **data;
+	uint32_t **data;
 	uint8_t currentBitsInHash;
 	uint64_t map_entries;
 };
@@ -24,7 +27,7 @@ struct ptrHashmap *getConstructedHashmap(){
 	return result;
 }
 
-void ptrHashmap_addPointerToDict(struct ptrHashmap *hashmap, void *ptr){
+void ptrHashmap_addPointerToDict(struct ptrHashmap *hashmap, void *ptr, uint32_t tag){
 	// Get the offset hash
 	uint64_t offset_hash = basicComputeHash(hashmap, ptr);
 	//Check for collision
@@ -36,5 +39,5 @@ void ptrHashmap_addPointerToDict(struct ptrHashmap *hashmap, void *ptr){
 		offset_hash = basicComputeHash(hashmap, ptr);
 		
 	}
-	*(hashmap->data+basicComputeHash(hashmap, ptr)) = ptr;
+	memcpy((hashmap->data+basicComputeHash(hashmap, ptr)), &tag, sizeof(uint32_t));
 }
